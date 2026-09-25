@@ -1,4 +1,4 @@
-"""Extraction: turn HTML into raw text fields. No cleaning happens here -- that comes in the next stage."""
+"""Extraction: turn HTML into raw text fields. No cleaning happens here -- that is normalize.py's job."""
 
 from urllib.parse import urljoin
 
