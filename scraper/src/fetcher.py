@@ -1,6 +1,7 @@
-"""Polite fetching: identify ourselves, time out, check status, cache everything."""
+"""Polite fetching: identify ourselves, time out, go slowly, check status, cache everything."""
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,10 +36,12 @@ def utc_now_iso() -> str:
 
 
 class PoliteFetcher:
-    def __init__(self, cache_dir: Path = config.CACHE_DIR):
+    def __init__(self, cache_dir: Path = config.CACHE_DIR, delay: float = config.DELAY_SECONDS):
         self.cache_dir = cache_dir
+        self.delay = delay
         self.session = requests.Session()
         self.session.headers["User-Agent"] = config.USER_AGENT
+        self._last_request = 0.0
         self.stats = {"pages_fetched": 0, "cache_hits": 0}
 
     def get(self, url: str, cache_name: str) -> Page:
@@ -63,11 +66,19 @@ class PoliteFetcher:
         # The pages are UTF-8, so decode the raw bytes ourselves.
         return Page(url, body.decode("utf-8"), fetched_at, False, len(body))
 
+    def _wait_politely(self) -> None:
+        # Only real requests wait; cache hits never leave this computer.
+        elapsed = time.monotonic() - self._last_request
+        if elapsed < self.delay:
+            time.sleep(self.delay - elapsed)
+
     def _fetch_once(self, url: str) -> tuple[bytes, str]:
+        self._wait_politely()
         fetched_at = utc_now_iso()
         try:
             response = self.session.get(url, timeout=config.TIMEOUT_SECONDS)
         finally:
+            self._last_request = time.monotonic()
             self.stats["pages_fetched"] += 1
         # Only 200 means "here is your page". Anything else is a failed fetch, not HTML to parse.
         if response.status_code != 200:

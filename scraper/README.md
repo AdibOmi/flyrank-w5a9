@@ -18,7 +18,9 @@ python -m pip install -r requirements.txt
 python -m src.main
 ```
 
-The first run prints `FETCH` and saves the page to `cache/`. Every run after that prints `CACHE HIT` and reads the saved copy, so the site only serves the page once.
+The script starts at catalogue page 1 and follows the site's own "next" link to pages 2 and 3, then stops. It prints `catalogue_pages=3 discovered=60 unique_urls=60`.
+
+Each page is fetched once (`FETCH`) and saved to `cache/`. Every run after that prints `CACHE HIT` and reads the saved copy, so the site only serves each page once. Real requests are spaced at least 1 s apart. Cache hits don't wait, because they never leave your computer.
 
 ## Target classification
 

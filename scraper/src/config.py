@@ -6,9 +6,11 @@ ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = ROOT / "cache"
 
 START_URL = "https://books.toscrape.com/catalogue/page-1.html"
+MAX_CATALOGUE_PAGES = 3
 ALLOWED_HOST = "books.toscrape.com"
 
 # Honest identity: a site owner reading their logs can find out who we are.
 USER_AGENT = "FlyRankInternshipA9/1.0 (+https://github.com/AdibOmi/flyrank-w5a9)"
 
 TIMEOUT_SECONDS = 10       # never wait forever
+DELAY_SECONDS = 1.0        # min gap between real requests (assignment floor is 0.5 s)
