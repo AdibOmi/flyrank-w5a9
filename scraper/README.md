@@ -69,6 +69,27 @@ Output:
 
 **Reruns are safe.** Records are keyed by `product_url`, so a book that shows up twice is stored once. Both files are rewritten from scratch on every run (through a temp file and a rename), so a second run gives the same 60 records, not 120.
 
+## When a page fails
+
+- **Each page is handled on its own.** A page that can't be fetched or parsed is logged and skipped, and the other pages carry on.
+- **One retry, only where it can help.** A timeout, a connection error or a `5xx` response gets one more try after 2 s. A `404` (the page doesn't exist) and a `403` (the site said no) are never retried.
+- **Failed pages are never cached,** so the next run tries them again.
+- **Every run ends with `output/run-report.json`:** start and finish time, duration, catalogue pages, discovered and unique URLs, pages fetched from the network, cache hits, retries, valid and invalid records, and failed pages with their reasons.
+
+To prove it, `python -m src.main --fake-url` adds one made-up book URL (`.../this-book-does-not-exist_99999/index.html`). The run still finishes and `books.json` still has the 60 good records. The report shows:
+
+```json
+"failed_pages": 1,
+"failures": [
+  {
+    "url": "https://books.toscrape.com/catalogue/this-book-does-not-exist_99999/index.html",
+    "stage": "fetch",
+    "reason": "HTTP 404",
+    "attempts": 1
+  }
+]
+```
+
 ## Target classification
 
 | Question | Answer |

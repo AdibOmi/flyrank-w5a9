@@ -1,13 +1,18 @@
-"""Entry point for the polite scraper. Run from the scraper/ folder:  python -m src.main"""
+"""Entry point: fetch -> extract -> normalize -> validate -> store -> report.
 
+Run from the scraper/ folder:  python -m src.main
+"""
+
+import argparse
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
 from . import config
-from .fetcher import FetchError, PoliteFetcher
+from .fetcher import FetchError, PoliteFetcher, utc_now_iso
 from .models import Book
 from .normalize import canonical_url, normalize
 from .parser import parse_book, parse_catalogue
@@ -34,7 +39,7 @@ def write_json(path: Path, data) -> None:
     tmp.replace(path)
 
 
-def discover(fetcher: PoliteFetcher) -> tuple[int, list[tuple[str, str]]]:
+def discover(fetcher: PoliteFetcher, failures: list) -> tuple[int, list[tuple[str, str]]]:
     """Follow the site's own "next" links for MAX_CATALOGUE_PAGES pages. Returns (pages, [(book_url, source_page)])."""
     found = []
     url, pages = config.START_URL, 0
@@ -42,6 +47,7 @@ def discover(fetcher: PoliteFetcher) -> tuple[int, list[tuple[str, str]]]:
         try:
             page = fetcher.get(url, cache_name_for(url))
         except FetchError as err:
+            failures.append({"url": url, "stage": "catalogue", "reason": err.reason, "attempts": err.attempts})
             print(f"FAILED    {url} -> {err.reason}")
             break
         log_page(page, cache_name_for(url))
@@ -51,31 +57,44 @@ def discover(fetcher: PoliteFetcher) -> tuple[int, list[tuple[str, str]]]:
     return pages, found
 
 
-def main() -> None:
+def run(fake_url: bool, show_sample: bool) -> dict:
+    started_at, t0 = utc_now_iso(), time.monotonic()
     fetcher = PoliteFetcher()
-    catalogue_pages, found = discover(fetcher)
+    failures: list[dict] = []
+    errors: list[dict] = []
 
-    # Remove duplicates by canonical URL; the first sighting keeps its source page.
+    # 1. Discover book URLs, de-duplicated by canonical URL (first sighting keeps its source page).
+    catalogue_pages, found = discover(fetcher, failures)
     unique: dict[str, str] = {}
     for book_url, source_page in found:
         unique.setdefault(canonical_url(book_url), source_page)
-
     print(f"catalogue_pages={catalogue_pages} discovered={len(found)} unique_urls={len(unique)}")
 
-    # Visit every book page (same politeness as Stage 1: user-agent, timeout, status check, delay, cache).
+    if fake_url:
+        unique.setdefault(config.FAKE_BOOK_URL, config.START_URL)
+        print(f"added deliberately broken URL: {config.FAKE_BOOK_URL}")
+
+    # 2. Visit every book page on its own -- one bad page is logged and skipped, never fatal.
     books: dict[str, dict] = {}
-    errors: list[dict] = []
-    detail_pages, sample = 0, None
+    detail_ok, sample = 0, None
     for book_url, source_page in unique.items():
         name = cache_name_for(book_url)
-        page = fetcher.get(book_url, name)
+        try:
+            page = fetcher.get(book_url, name)
+            raw = parse_book(page.html, book_url, source_page, page.fetched_at)
+        except FetchError as err:
+            failures.append({"url": book_url, "stage": "fetch", "reason": err.reason, "attempts": err.attempts})
+            print(f"FAILED    {name:<60} {err.reason}")
+            continue
+        except Exception as err:  # malformed HTML must not take the run down either
+            failures.append({"url": book_url, "stage": "extract", "reason": f"{type(err).__name__}: {err}"})
+            print(f"FAILED    {name:<60} extract: {err}")
+            continue
         log_page(page, name)
-        # Provenance: where the link was found and when the page was really fetched.
-        raw = parse_book(page.html, book_url, source_page, page.fetched_at)
-        detail_pages += 1
+        detail_ok += 1
         sample = sample or raw
 
-        # Normalize and validate before anything is stored.
+        # 3. Normalize and validate before anything is stored.
         try:
             book = Book.model_validate(normalize(raw))
         except ValidationError as err:
@@ -85,16 +104,46 @@ def main() -> None:
             continue
         books[book.product_url] = book.model_dump(mode="json")  # keyed by identity: no duplicates
 
-    print(f"detail_pages={detail_pages}")
-    print(f"pages_fetched={fetcher.stats['pages_fetched']} cache_hits={fetcher.stats['cache_hits']}")
-    if sample:
+    print(f"detail_pages={detail_ok}")
+    if show_sample and sample:
         print("sample raw record:")
         print(json.dumps(sample, indent=2, ensure_ascii=False))
 
-    # Store. Files are rewritten from scratch, so a rerun gives the same 60 records, not 120.
+    # 4. Store. Files are rewritten from scratch, so a rerun gives the same 60 records, not 120.
     write_json(config.OUTPUT_DIR / "books.json", list(books.values()))
     write_json(config.OUTPUT_DIR / "errors.json", errors)
-    print(f"valid_records={len(books)} invalid_records={len(errors)}")
+
+    # 5. Report.
+    report = {
+        "started_at": started_at,
+        "finished_at": utc_now_iso(),
+        "duration_seconds": round(time.monotonic() - t0, 2),
+        "catalogue_pages": catalogue_pages,
+        "discovered_urls": len(found),
+        "unique_urls": len(unique),
+        "detail_pages": detail_ok,
+        "pages_fetched": fetcher.stats["pages_fetched"],
+        "cache_hits": fetcher.stats["cache_hits"],
+        "retries": fetcher.stats["retries"],
+        "valid_records": len(books),
+        "invalid_records": len(errors),
+        "failed_pages": len(failures),
+        "failures": failures,
+    }
+    write_json(config.OUTPUT_DIR / "run-report.json", report)
+    return report
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Polite scraper for the first 3 catalogue pages of books.toscrape.com")
+    parser.add_argument("--fake-url", action="store_true",
+                        help="add one made-up book URL to prove a broken page is skipped, not fatal")
+    parser.add_argument("--no-sample", action="store_true", help="do not print a sample raw record")
+    args = parser.parse_args()
+
+    report = run(fake_url=args.fake_url, show_sample=not args.no_sample)
+    summary = {k: v for k, v in report.items() if k != "failures"}
+    print("run report:", json.dumps(summary))
 
 
 if __name__ == "__main__":
