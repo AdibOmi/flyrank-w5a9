@@ -41,6 +41,34 @@ It then opens all 60 book pages and extracts one raw record per book, printing `
 - A book with no description gets `null`. Text is never made up.
 - `source_page` and `fetched_at` are provenance: where the link was found and when the page was really fetched. A cache hit keeps the original fetch time.
 
+## Record schema
+
+Every raw record is normalized, then checked against [`src/models.py`](src/models.py) (Pydantic in strict mode with `extra="forbid"`) before it is stored. Each raw text value is stored next to its cleaned value.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `product_url` | string | yes | Canonical identity: an absolute `https://books.toscrape.com/catalogue/.../index.html` URL with no query string or fragment |
+| `source_page` | string | yes | Provenance: the catalogue page where the link was found |
+| `fetched_at` | ISO-8601 UTC | yes | Provenance: when the page was actually fetched from the network |
+| `title` | string | yes | Must not be empty |
+| `price_text` | string | yes | Raw text, e.g. `"£51.77"` |
+| `price_gbp` | number ≥ 0 | yes | Cleaned value, e.g. `51.77` |
+| `availability_text` | string | yes | Raw text, e.g. `"In stock (22 available)"` |
+| `in_stock` | boolean | yes | Cleaned value |
+| `stock_count` | integer ≥ 0 or null | no | `22`, or null when the page doesn't say |
+| `rating_text` | `"One"` to `"Five"` | yes | Raw value from the CSS class |
+| `rating` | integer 1 to 5 | yes | Cleaned value |
+| `description` | string or null | no | `null` when the page has no description |
+
+Output:
+
+| File | Contents |
+| --- | --- |
+| `output/books.json` | The validated records |
+| `output/errors.json` | Records that failed the schema, with field-level reasons and their raw values (`[]` on a clean run). They never reach `books.json`. |
+
+**Reruns are safe.** Records are keyed by `product_url`, so a book that shows up twice is stored once. Both files are rewritten from scratch on every run (through a temp file and a rename), so a second run gives the same 60 records, not 120.
+
 ## Target classification
 
 | Question | Answer |
