@@ -22,6 +22,25 @@ The script starts at catalogue page 1 and follows the site's own "next" link to 
 
 Each page is fetched once (`FETCH`) and saved to `cache/`. Every run after that prints `CACHE HIT` and reads the saved copy, so the site only serves each page once. Real requests are spaced at least 1 s apart. Cache hits don't wait, because they never leave your computer.
 
+It then opens all 60 book pages and extracts one raw record per book, printing `detail_pages=60` and one sample:
+
+```json
+{
+  "title": "A Light in the Attic",
+  "product_url": "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+  "price_text": "£51.77",
+  "availability_text": "In stock (22 available)",
+  "rating_text": "Three",
+  "description": "It's hard to imagine a world without A Light in the Attic. ...",
+  "source_page": "https://books.toscrape.com/catalogue/page-1.html",
+  "fetched_at": "2026-09-24T11:00:17Z"
+}
+```
+
+- The selectors only look inside the product area of the page, so a second price elsewhere on the page can't be picked up by mistake.
+- A book with no description gets `null`. Text is never made up.
+- `source_page` and `fetched_at` are provenance: where the link was found and when the page was really fetched. A cache hit keeps the original fetch time.
+
 ## Target classification
 
 | Question | Answer |
