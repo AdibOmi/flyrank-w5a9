@@ -1,0 +1,14 @@
+"""All tunable settings in one place."""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CACHE_DIR = ROOT / "cache"
+
+START_URL = "https://books.toscrape.com/catalogue/page-1.html"
+ALLOWED_HOST = "books.toscrape.com"
+
+# Honest identity: a site owner reading their logs can find out who we are.
+USER_AGENT = "FlyRankInternshipA9/1.0 (+https://github.com/AdibOmi/flyrank-w5a9)"
+
+TIMEOUT_SECONDS = 10       # never wait forever

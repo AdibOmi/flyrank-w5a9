@@ -6,6 +6,20 @@ A small, polite scraping pipeline for [Books to Scrape](https://books.toscrape.c
 
 > Work in progress: this README grows one stage at a time.
 
+## Run it
+
+You need Python 3.10 or newer.
+
+```powershell
+cd scraper
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1          # macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m src.main
+```
+
+The first run prints `FETCH` and saves the page to `cache/`. Every run after that prints `CACHE HIT` and reads the saved copy, so the site only serves the page once.
+
 ## Target classification
 
 | Question | Answer |
